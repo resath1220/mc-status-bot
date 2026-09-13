@@ -5,23 +5,37 @@ function bool(v, fallback = false) {
   return v === 'true' || v === '1';
 }
 
+function int(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 module.exports = {
+  // ── Discord auth ──────────────────────────────────────────
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
-  channelId: process.env.CHANNEL_ID,
-  guildId: process.env.GUILD_ID,
+  guildId: process.env.GUILD_ID || null, // optional: instant guild-scoped command registration
 
-  serverName: process.env.SERVER_NAME || 'MINECRAFT NETWORK',
-  serverSubtitle: process.env.SERVER_SUBTITLE || 'Server Status',
+  // ── Defaults for newly-added servers ─────────────────────
+  defaultUpdateIntervalMs: int(process.env.UPDATE_INTERVAL_MS, 30000),
+  maxPlayerChips: int(process.env.MAX_PLAYER_CHIPS, 10),
+  minUpdateIntervalMs: 15000, // floor to protect against accidental hammering
+  requestTimeoutMs: int(process.env.REQUEST_TIMEOUT_MS, 5000),
 
-  javaHost: process.env.JAVA_HOST,
-  javaPort: Number(process.env.JAVA_PORT) || 25565,
+  // ── Legacy single-server env vars (used once, to auto-seed
+  // the database on first run so existing deployments keep working
+  // without re-running setup). Safe to remove after first boot. ──
+  legacy: {
+    serverName: process.env.SERVER_NAME || null,
+    javaHost: process.env.JAVA_HOST || null,
+    javaPort: int(process.env.JAVA_PORT, 25565),
+    bedrockHost: process.env.BEDROCK_HOST || null,
+    bedrockPort: int(process.env.BEDROCK_PORT, 19132),
+    channelId: process.env.CHANNEL_ID || null,
+    serverIconUrl: process.env.SERVER_ICON_URL || null,
+  },
 
-  bedrockHost: process.env.BEDROCK_HOST,
-  bedrockPort: Number(process.env.BEDROCK_PORT) || 19132,
-
-  serverIconUrl: process.env.SERVER_ICON_URL || null,
-
-  updateIntervalMs: Number(process.env.UPDATE_INTERVAL_MS) || 30000,
-  maxPlayerChips: Number(process.env.MAX_PLAYER_CHIPS) || 10,
+  // ── Misc ──────────────────────────────────────────────────
+  dbPath: process.env.DB_PATH || require('path').join(__dirname, '..', 'data', 'monitor.sqlite'),
+  ownerNotifyOnStateChangeOnly: true,
 };

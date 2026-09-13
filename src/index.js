@@ -1,10 +1,15 @@
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const config = require('./config');
-const { getCombinedStatus } = require('./mcstatus');
-const { buildStatusPayload } = require('./statusEmbed');
+const logger = require('./utils/logger');
 
 if (!config.token) {
-  console.error('Missing DISCORD_TOKEN in .env — see .env.example.');
+  logger.error('Missing DISCORD_TOKEN in .env — see .env.example.');
+  process.exit(1);
+}
+if (!config.clientId) {
+  logger.error('Missing CLIENT_ID in .env — see .env.example.');
   process.exit(1);
 }
 
@@ -13,78 +18,29 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// Tracks the live panel message per channel so we can edit it in place.
-const panels = new Map(); // channelId -> Message
-
-async function refreshPanel(channel) {
-  const status = await getCombinedStatus();
-  const payload = await buildStatusPayload(status);
-
-  const existing = panels.get(channel.id);
-
-  try {
-    if (existing) {
-      await existing.edit(payload);
-    } else {
-      const msg = await channel.send(payload);
-      panels.set(channel.id, msg);
-    }
-  } catch (err) {
-    // Message may have been deleted — recreate it.
-    console.warn(`Panel edit failed (${err.message}), re-posting...`);
-    const msg = await channel.send(payload);
-    panels.set(channel.id, msg);
+// ── Load commands ─────────────────────────────────────────────
+client.commands = new Collection();
+const commandsDir = path.join(__dirname, 'commands');
+for (const file of fs.readdirSync(commandsDir).filter((f) => f.endsWith('.js'))) {
+  const command = require(path.join(commandsDir, file));
+  if (command?.data?.name) {
+    client.commands.set(command.data.name, command);
   }
-
-  return status;
 }
+logger.info(`Loaded ${client.commands.size} command(s).`);
 
-client.once('ready', async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  client.user.setActivity('Minecraft server status', { type: 3 }); // Watching
-
-  if (config.channelId) {
-    try {
-      const channel = await client.channels.fetch(config.channelId);
-      await refreshPanel(channel);
-
-      setInterval(() => {
-        refreshPanel(channel).catch((e) => console.error('Auto-refresh error:', e));
-      }, config.updateIntervalMs);
-
-      console.log(
-        `Status panel live in #${channel.name || channel.id}, refreshing every ${
-          config.updateIntervalMs / 1000
-        }s.`
-      );
-    } catch (err) {
-      console.error('Could not initialize status panel channel:', err.message);
-    }
+// ── Load events ───────────────────────────────────────────────
+const eventsDir = path.join(__dirname, 'events');
+for (const file of fs.readdirSync(eventsDir).filter((f) => f.endsWith('.js'))) {
+  const event = require(path.join(eventsDir, file));
+  if (event.once) {
+    client.once(event.name, (...args) => event.execute(...args));
   } else {
-    console.log('No CHANNEL_ID set — use /setup-status in a channel to start a panel.');
+    client.on(event.name, (...args) => event.execute(...args));
   }
-});
+}
+logger.info(`Loaded ${fs.readdirSync(eventsDir).filter((f) => f.endsWith('.js')).length} event handler(s).`);
 
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === 'status') {
-    await interaction.deferReply({ ephemeral: true });
-    const status = await getCombinedStatus();
-    await refreshPanel(interaction.channel);
-    await interaction.editReply(
-      status.online
-        ? `✅ Panel refreshed — ${status.players.online}/${status.players.max} players online.`
-        : '⚠️ Panel refreshed — server appears to be offline.'
-    );
-  }
-
-  if (interaction.commandName === 'setup-status') {
-    await interaction.deferReply({ ephemeral: true });
-    panels.delete(interaction.channel.id);
-    await refreshPanel(interaction.channel);
-    await interaction.editReply('✅ Live status panel created in this channel.');
-  }
-});
+process.on('unhandledRejection', (err) => logger.error('Unhandled rejection:', err));
 
 client.login(config.token);
