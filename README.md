@@ -90,9 +90,9 @@ Use `.env.example` as the public template. If a bot token is ever exposed, reset
 
 ## 📄 License
 
-Add your chosen license file before publishing. The badge above assumes `LICENSE` exists.
+This project is licensed under the **MIT License**.
 
----
+See the [LICENSE](LICENSE) file for the full license text.
 
 <div align="center">
 
